@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logic Deduction Puzzle</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    /* ── Loading ─────────────────────────────────────────── */
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 1rem;
+      font-size: 1.2rem;
+      color: #94a3b8;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #334155;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── App shell ───────────────────────────────────────── */
+    #app { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 0.75rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; color: #f1f5f9; }
+    #stats { font-size: 0.85rem; color: #94a3b8; text-align: right; line-height: 1.6; }
+
+    /* ── Layout ──────────────────────────────────────────── */
+    #main-layout {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+
+    /* ── Clues panel ─────────────────────────────────────── */
+    #clues-panel {
+      flex: 0 0 260px;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 1rem;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    #clues-panel h2 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin-bottom: 0.75rem;
+    }
+    .clue-item {
+      background: #0f172a;
+      border-left: 3px solid #3b82f6;
+      border-radius: 6px;
+      padding: 0.55rem 0.75rem;
+      margin-bottom: 0.45rem;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      color: #cbd5e1;
+      animation: slideIn 0.35s ease;
+    }
+    .clue-num {
+      display: inline-block;
+      background: #1d4ed8;
+      color: #bfdbfe;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ── Grid ────────────────────────────────────────────── */
+    #grid-container { flex: 1; min-width: 0; }
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.65rem;
+    }
+
+    .tile {
+      background: #334155;
+      border: 2px solid transparent;
+      border-radius: 12px;
+      padding: 0.7rem 0.5rem;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.15s, box-shadow 0.15s, background 0.3s, border-color 0.3s;
+      user-select: none;
+    }
+    .tile:hover:not(.revealed) {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+      border-color: #64748b;
+    }
+    .tile.innocent  { background: #064e3b; border-color: #10b981; cursor: default; }
+    .tile.criminal  { background: #7f1d1d; border-color: #ef4444; cursor: default; }
+    .tile.revealed  { cursor: default; }
+
+    .tile-emoji { font-size: 2rem; display: block; line-height: 1; margin-bottom: 0.35rem; }
+    .tile-name  { font-size: 0.8rem; font-weight: 600; color: #f1f5f9; margin-bottom: 0.15rem; }
+    .tile-occ   { font-size: 0.68rem; color: #94a3b8; }
+    .tile-badge {
+      position: absolute;
+      top: 0.3rem; right: 0.35rem;
+      font-size: 0.75rem;
+      line-height: 1;
+    }
+
+    /* ── Overlay / Modal ─────────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.72);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200;
+    }
+    .overlay.hidden { display: none; }
+
+    .modal-box {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 2rem 1.75rem;
+      max-width: 360px;
+      width: 92%;
+      text-align: center;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.55);
+    }
+    .modal-emoji { font-size: 3rem; display: block; margin-bottom: 0.4rem; line-height: 1; }
+    .modal-name  { font-size: 1.15rem; font-weight: 700; color: #f1f5f9; }
+    .modal-occ   { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.25rem; }
+    .modal-question { font-size: 0.95rem; color: #cbd5e1; margin-bottom: 0.9rem; }
+
+    #modal-msg {
+      min-height: 1.4rem;
+      font-size: 0.82rem;
+      margin-bottom: 0.85rem;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      line-height: 1.4;
+    }
+    #modal-msg.error   { background: #7f1d1d; color: #fca5a5; }
+    #modal-msg.warning { background: #78350f; color: #fcd34d; }
+
+    .modal-btns { display: flex; gap: 0.65rem; margin-bottom: 0.65rem; }
+
+    .btn {
+      flex: 1;
+      padding: 0.6rem 1rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover   { opacity: 0.88; transform: translateY(-1px); }
+    .btn:active  { transform: translateY(0); }
+    .btn-innocent { background: #10b981; color: #fff; }
+    .btn-criminal { background: #ef4444; color: #fff; }
+    .btn-cancel   { background: #334155; color: #94a3b8; width: 100%; }
+
+    /* ── End screen ──────────────────────────────────────── */
+    .end-box {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 2rem 1.75rem;
+      max-width: 520px;
+      width: 92%;
+      text-align: center;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.55);
+    }
+    .end-box h2   { font-size: 1.6rem; margin-bottom: 0.5rem; color: #f1f5f9; }
+    .end-subtitle { font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.4rem; }
+    .end-legend   {
+      display: flex; gap: 1rem; justify-content: center;
+      font-size: 0.75rem; color: #94a3b8; margin-bottom: 1rem;
+    }
+    .legend-dot {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 2px; margin-right: 4px; vertical-align: middle;
+    }
+    .legend-green  { background: #10b981; }
+    .legend-orange { background: #f59e0b; }
+
+    #results-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.45rem;
+      margin-bottom: 1.5rem;
+    }
+    .result-tile {
+      border-radius: 8px;
+      padding: 0.5rem 0.3rem;
+      text-align: center;
+      font-size: 0.65rem;
+    }
+    .result-tile.first-try  { background: #064e3b; border: 2px solid #10b981; }
+    .result-tile.multi-try  { background: #78350f; border: 2px solid #f59e0b; }
+    .result-emoji { font-size: 1.4rem; display: block; line-height: 1.1; }
+    .result-name  { color: #cbd5e1; }
+
+    .btn-play-again {
+      background: #3b82f6;
+      color: #fff;
+      font-size: 0.95rem;
+      padding: 0.7rem 2rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn-play-again:hover { opacity: 0.88; }
+
+    /* ── Responsive ──────────────────────────────────────── */
+    @media (max-width: 680px) {
+      #main-layout  { flex-direction: column; }
+      #clues-panel  { flex: none; width: 100%; max-height: 180px; }
+      header h1     { font-size: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <div class="spinner"></div>
+  <span>Generating puzzle…</span>
+</div>
+
+<!-- Main app -->
+<div id="app" style="display:none">
+  <header>
+    <h1>🔍 Logic Deduction Puzzle</h1>
+    <div id="stats">
+      Clues revealed: <span id="stat-clues">0 / 0</span><br>
+      Suspects identified: <span id="stat-found">0 / 20</span>
+    </div>
+  </header>
+  <div id="main-layout">
+    <div id="clues-panel">
+      <h2>Clues</h2>
+      <div id="clues-list"></div>
+    </div>
+    <div id="grid-container">
+      <div id="grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Guess modal -->
+<div id="modal" class="overlay hidden">
+  <div class="modal-box">
+    <div id="modal-suspect"></div>
+    <p class="modal-question">Is this suspect innocent or criminal?</p>
+    <div id="modal-msg"></div>
+    <div class="modal-btns">
+      <button class="btn btn-innocent" onclick="makeGuess(0)">✅ Innocent</button>
+      <button class="btn btn-criminal" onclick="makeGuess(1)">🔴 Criminal</button>
+    </div>
+    <button class="btn btn-cancel" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- End screen -->
+<div id="end-screen" class="overlay hidden">
+  <div class="end-box">
+    <h2>🎉 Puzzle Solved!</h2>
+    <p class="end-subtitle">Here's how you did on each suspect:</p>
+    <div class="end-legend">
+      <span><span class="legend-dot legend-green"></span>Correct on first try</span>
+      <span><span class="legend-dot legend-orange"></span>Needed multiple guesses</span>
+    </div>
+    <div id="results-grid"></div>
+    <button class="btn-play-again" onclick="newGame()">Play Again 🔄</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ================================================================
+// CONSTANTS
+// ================================================================
+const ROWS = 5, COLS = 4, N = ROWS * COLS;
+
+const MALE_NAMES = [
+  'Alex','Bob','Carlos','David','Eric','Frank',
+  'George','Henry','Ivan','Jack','Karl','Leo',
+  'Marco','Nick','Oscar','Paul','Ryan','Sam','Tom','Umar'
+];
+const FEMALE_NAMES = [
+  'Alice','Beth','Clara','Diana','Emma','Fiona',
+  'Grace','Helen','Iris','Julia','Kate','Luna',
+  'Maria','Nina','Olivia','Paula','Rose','Sara','Tina','Uma'
+];
+
+// Occupation → gendered emoji
+const OCC_EMOJIS = {
+  Detective: { m:'🕵️', f:'🕵️' },
+  Doctor:    { m:'👨‍⚕️', f:'👩‍⚕️' },
+  Teacher:   { m:'👨‍🏫', f:'👩‍🏫' },
+  Chef:      { m:'👨‍🍳', f:'👩‍🍳' },
+  Lawyer:    { m:'👨‍⚖️', f:'👩‍⚖️' },
+  Banker:    { m:'👨‍💼', f:'👩‍💼' },
+  Artist:    { m:'👨‍🎨', f:'👩‍🎨' },
+  Scientist: { m:'👨‍🔬', f:'👩‍🔬' },
+  Mechanic:  { m:'👨‍🔧', f:'👩‍🔧' },
+  Athlete:   { m:'🏃‍♂️', f:'🏃‍♀️' }
+};
+const ALL_OCCS = Object.keys(OCC_EMOJIS);
+
+// ================================================================
+// UTILITIES
+// ================================================================
+const rand  = n => Math.floor(Math.random() * n);
+const range = n => Array.from({ length: n }, (_, i) => i);
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const tileRow = i => Math.floor(i / COLS);
+const tileCol = i => i % COLS;
+
+function getNeighbors(idx) {
+  const r = tileRow(idx), c = tileCol(idx), res = [];
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS)
+        res.push(nr * COLS + nc);
+    }
+  return res;
+}
+
+// ================================================================
+// SOLVER
+// ================================================================
+
+// Attempt to propagate a single subset constraint.
+// Mutates `state`. Returns true (changed), false (unchanged), or null (contradiction).
+function propagateSubset(c, state) {
+  const { S, kmin, kmax } = c;
+  const crim = S.filter(i => state[i] === 1).length;
+  const unk  = S.filter(i => state[i] === -1);
+  if (crim > kmax)                   return null; // too many criminals
+  if (crim + unk.length < kmin)      return null; // not enough possible criminals
+  let changed = false;
+  if (crim === kmax && unk.length) {
+    unk.forEach(i => { state[i] = 0; });
+    changed = true;
+  }
+  if (crim + unk.length === kmin && unk.length) {
+    unk.forEach(i => { state[i] = 1; });
+    changed = true;
+  }
+  return changed;
+}
+
+// Check whether a comparison constraint is still satisfiable with the current partial state.
+function cmpPossible(c, state) {
+  const { A, op, B, offset } = c;
+  const aMin = A.filter(i => state[i] === 1).length;
+  const aMax = aMin + A.filter(i => state[i] === -1).length;
+  const bMin = B.filter(i => state[i] === 1).length;
+  const bMax = bMin + B.filter(i => state[i] === -1).length;
+  if (op === '<') return aMin < bMax + offset;
+  if (op === '>') return aMax > bMin + offset;
+  // op === '='
+  return !(aMax < bMin + offset || aMin > bMax + offset);
+}
+
+// Propagate all constraints to a fixed point.
+// Mutates `state`. Returns `state` or null on contradiction.
+function propagateAll(constraints, state) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const c of constraints) {
+      if (c.type === 'subset') {
+        const r = propagateSubset(c, state);
+        if (r === null) return null;
+        if (r) changed = true;
+      } else if (c.type === 'cmp') {
+        if (!cmpPossible(c, state)) return null;
+      }
+    }
+  }
+  return state;
+}
+
+// Validate a fully assigned state against one constraint.
+function validateOne(c, state) {
+  if (c.type === 'subset') {
+    const s = c.S.reduce((t, i) => t + state[i], 0);
+    return s >= c.kmin && s <= c.kmax;
+  }
+  if (c.type === 'cmp') {
+    const sA = c.A.reduce((t, i) => t + state[i], 0);
+    const sB = c.B.reduce((t, i) => t + state[i], 0);
+    if (c.op === '<') return sA <  sB + c.offset;
+    if (c.op === '>') return sA >  sB + c.offset;
+    return sA === sB + c.offset;
+  }
+  return true;
+}
+
+// Full solver: constraint propagation + backtracking.
+// `initial` is an optional starting state array (−1 / 0 / 1).
+// Returns an array of solutions, stopping once `maxSolutions` are found.
+function solve(constraints, maxSolutions, initial) {
+  maxSolutions = maxSolutions || 2;
+  const solutions = [];
+
+  function bt(state) {
+    if (solutions.length >= maxSolutions) return;
+
+    // Propagate
+    const s = propagateAll(constraints, [...state]);
+    if (s === null) return; // contradiction
+
+    // Collect unknowns
+    const unk = [];
+    for (let i = 0; i < N; i++) if (s[i] === -1) unk.push(i);
+
+    if (unk.length === 0) {
+      if (constraints.every(c => validateOne(c, s))) solutions.push([...s]);
+      return;
+    }
+
+    // Branch on first unknown tile
+    const idx = unk[0];
+    for (const val of [0, 1]) {
+      if (solutions.length >= maxSolutions) break;
+      const next = [...s];
+      next[idx] = val;
+      bt(next);
+    }
+  }
+
+  const start = initial ? [...initial] : new Array(N).fill(-1);
+  bt(start);
+  return solutions;
+}
+
+// ================================================================
+// PUZZLE GENERATION
+// ================================================================
+
+const MAX_CLUES = 10; // spec: entire board revealed after no more than 10 clues
+
+function generateSolution() {
+  const numCrim = 8 + rand(3); // 8–10 criminals (40–50 %)
+  const sol = new Array(N).fill(0);
+  shuffle(range(N)).slice(0, numCrim).forEach(i => { sol[i] = 1; });
+  return sol;
+}
+
+function generateSuspects(/* solution */) {
+  const numOcc = 7 + rand(4); // 7–10 occupation types
+  const occs   = shuffle([...ALL_OCCS]).slice(0, numOcc);
+
+  // Fill 20 slots with these occupations, cycling through them
+  const raw = [];
+  while (raw.length < N) for (const o of occs) { if (raw.length < N) raw.push(o); }
+  const assignments = shuffle(raw);
+
+  const maleNames   = shuffle([...MALE_NAMES]);
+  const femaleNames = shuffle([...FEMALE_NAMES]);
+  let mi = 0, fi = 0;
+  const usedNames = new Set();
+
+  return assignments.map((occ, idx) => {
+    const gender = rand(2) === 0 ? 'm' : 'f';
+    const pool   = gender === 'm' ? maleNames : femaleNames;
+    let name;
+    // Pick a unique name from the pool
+    const startIdx = gender === 'm' ? mi : fi;
+    for (let k = 0; k < pool.length; k++) {
+      const candidate = pool[(startIdx + k) % pool.length];
+      if (!usedNames.has(candidate)) { name = candidate; break; }
+    }
+    if (gender === 'm') mi = (mi + 1) % maleNames.length;
+    else                fi = (fi + 1) % femaleNames.length;
+    if (!name) name = `Suspect${idx}`;
+    usedNames.add(name);
+    return { name, gender, occupation: occ, emoji: OCC_EMOJIS[occ][gender] };
+  });
+}
+
+// Build a large candidate pool of constraints, all pre-verified against `solution`.
+function buildCluePool(solution, suspects) {
+  const pool = [];
+
+  // -- Row totals --
+  for (let r = 0; r < ROWS; r++) {
+    const S = range(COLS).map(c => r * COLS + c);
+    const k = S.reduce((t, i) => t + solution[i], 0);
+    pool.push({ type:'subset', S, kmin:k, kmax:k,
+      text:`Row ${r+1} contains exactly ${k} criminal${k!==1?'s':''}.` });
+  }
+
+  // -- Column totals --
+  for (let c = 0; c < COLS; c++) {
+    const S = range(ROWS).map(r => r * COLS + c);
+    const k = S.reduce((t, i) => t + solution[i], 0);
+    pool.push({ type:'subset', S, kmin:k, kmax:k,
+      text:`Column ${c+1} contains exactly ${k} criminal${k!==1?'s':''}.` });
+  }
+
+  // -- Neighborhood clues (up to 8 most informative) --
+  const nbCandidates = range(N).map(i => {
+    const S = getNeighbors(i);
+    const k = S.reduce((t, j) => t + solution[j], 0);
+    return { type:'subset', S, kmin:k, kmax:k,
+      text:`${suspects[i].name}'s neighbors include exactly ${k} criminal${k!==1?'s':''}.` };
+  });
+  pool.push(...shuffle(nbCandidates).slice(0, 8));
+
+  // -- Occupation totals --
+  const occGroups = {};
+  for (let i = 0; i < N; i++) {
+    const o = suspects[i].occupation;
+    if (!occGroups[o]) occGroups[o] = [];
+    occGroups[o].push(i);
+  }
+  for (const [occ, tiles] of Object.entries(occGroups)) {
+    if (tiles.length < 2) continue;
+    const k = tiles.reduce((t, i) => t + solution[i], 0);
+    pool.push({ type:'subset', S:[...tiles], kmin:k, kmax:k,
+      text:`Among the ${occ}s, exactly ${k} ${k===1?'is':'are'} criminal.` });
+  }
+
+  // -- Row comparisons --
+  for (let r1 = 0; r1 < ROWS; r1++) {
+    for (let r2 = r1+1; r2 < ROWS; r2++) {
+      const A = range(COLS).map(c => r1*COLS+c);
+      const B = range(COLS).map(c => r2*COLS+c);
+      const sA = A.reduce((t,i)=>t+solution[i],0);
+      const sB = B.reduce((t,i)=>t+solution[i],0);
+      const op = sA>sB?'>':sA<sB?'<':'=';
+      const lbl = op==='>'?'more criminals than':op==='<'?'fewer criminals than':'the same number of criminals as';
+      pool.push({ type:'cmp', A, op, B, offset:0,
+        text:`Row ${r1+1} has ${lbl} Row ${r2+1}.` });
+    }
+  }
+
+  // -- Column comparisons --
+  for (let c1 = 0; c1 < COLS; c1++) {
+    for (let c2 = c1+1; c2 < COLS; c2++) {
+      const A = range(ROWS).map(r => r*COLS+c1);
+      const B = range(ROWS).map(r => r*COLS+c2);
+      const sA = A.reduce((t,i)=>t+solution[i],0);
+      const sB = B.reduce((t,i)=>t+solution[i],0);
+      const op = sA>sB?'>':sA<sB?'<':'=';
+      const lbl = op==='>'?'more criminals than':op==='<'?'fewer criminals than':'the same number of criminals as';
+      pool.push({ type:'cmp', A, op, B, offset:0,
+        text:`Column ${c1+1} has ${lbl} Column ${c2+1}.` });
+    }
+  }
+
+  // -- Occupation comparisons (sample up to 6) --
+  const occKeys = Object.keys(occGroups);
+  const pairs = [];
+  for (let a = 0; a < occKeys.length; a++)
+    for (let b = a+1; b < occKeys.length; b++)
+      pairs.push([occKeys[a], occKeys[b]]);
+  for (const [oA, oB] of shuffle(pairs).slice(0, 6)) {
+    const A = occGroups[oA], B = occGroups[oB];
+    const sA = A.reduce((t,i)=>t+solution[i],0);
+    const sB = B.reduce((t,i)=>t+solution[i],0);
+    const op = sA>sB?'>':sA<sB?'<':'=';
+    const lbl = op==='>'?`more criminal ${oA}s than criminal ${oB}s`
+              : op==='<'?`fewer criminal ${oA}s than criminal ${oB}s`
+              : `the same number of criminal ${oA}s as criminal ${oB}s`;
+    pool.push({ type:'cmp', A:[...A], op, B:[...B], offset:0,
+      text:`There are ${lbl}.` });
+  }
+
+  // -- Region clues: 2×2 blocks --
+  for (let r = 0; r < ROWS-1; r++) {
+    for (let c = 0; c < COLS-1; c++) {
+      const S = [r*COLS+c, r*COLS+c+1, (r+1)*COLS+c, (r+1)*COLS+c+1];
+      const k = S.reduce((t,i)=>t+solution[i],0);
+      // build label list from suspect names
+      const names = S.map(i => suspects[i].name);
+      pool.push({ type:'subset', S, kmin:k, kmax:k,
+        text:`Among ${names[0]}, ${names[1]}, ${names[2]}, and ${names[3]}, exactly ${k} ${k===1?'is':'are'} criminal.` });
+    }
+  }
+
+  return pool;
+}
+
+// Remove redundant clues while the puzzle remains uniquely solvable.
+function pruneClues(clues) {
+  const result = [...clues];
+  for (let i = result.length - 1; i >= 0; i--) {
+    const without = result.filter((_, j) => j !== i);
+    if (solve(without, 2).length === 1) result.splice(i, 1);
+  }
+  return result;
+}
+
+// Main generation entry point. Returns { solution, suspects, clues }.
+function generatePuzzle() {
+  const MAX_OUTER = 150;
+
+  for (let attempt = 0; attempt < MAX_OUTER; attempt++) {
+    const solution = generateSolution();
+    const suspects = generateSuspects(solution);
+    const pool     = shuffle(buildCluePool(solution, suspects));
+
+    // Add clues until the puzzle has a unique solution
+    let active = [];
+    for (const clue of pool) {
+      active.push(clue);
+      const count = solve(active, 2).length;
+      if (count === 1) break;
+      if (count === 0) active.pop(); // clue creates contradiction – skip
+    }
+
+    if (solve(active, 2).length !== 1) continue; // couldn't pin down solution
+
+    // Prune redundant clues
+    active = pruneClues(active);
+
+    if (active.length < 1 || active.length > MAX_CLUES) continue; // enforce spec limit
+
+    return { solution, suspects, clues: active };
+  }
+
+  // Relaxed fallback: accept any unique puzzle regardless of clue count
+  for (let attempt = 0; attempt < MAX_OUTER; attempt++) {
+    const solution = generateSolution();
+    const suspects = generateSuspects(solution);
+    const pool     = shuffle(buildCluePool(solution, suspects));
+    let active = [];
+    for (const clue of pool) {
+      active.push(clue);
+      const count = solve(active, 2).length;
+      if (count === 1) break;
+      if (count === 0) active.pop();
+    }
+    if (solve(active, 2).length !== 1) continue;
+    active = pruneClues(active);
+    if (active.length >= 1 && active.length <= MAX_CLUES) return { solution, suspects, clues: active };
+  }
+
+  throw new Error('Puzzle generation failed after all attempts.');
+}
+
+// ================================================================
+// GAME STATE
+// ================================================================
+let puzzle        = null;
+let boardState    = null; // -1 / 0 / 1 per tile
+let guessCount    = null; // total guesses per tile
+let firstTryOk    = null; // true|false (set when tile is revealed)
+let revealedClues = 0;
+let selectedTile  = null;
+
+// ================================================================
+// DEDUCIBILITY CHECK
+// ================================================================
+
+// A tile is deducible if exactly one value (0 or 1) is consistent with
+// the current visible clues + already-revealed tile values.
+function isTileDeducible(tileIdx) {
+  if (!puzzle || boardState[tileIdx] !== -1) return false;
+  const vis = puzzle.clues.slice(0, revealedClues);
+
+  // Try state with tile forced to 0 (innocent)
+  const s0 = [...boardState]; s0[tileIdx] = 0;
+  const has0 = solve(vis, 1, s0).length > 0;
+
+  // Try state with tile forced to 1 (criminal)
+  const s1 = [...boardState]; s1[tileIdx] = 1;
+  const has1 = solve(vis, 1, s1).length > 0;
+
+  return has0 !== has1; // exactly one is satisfiable
+}
+
+// ================================================================
+// RENDER
+// ================================================================
+
+function renderClues() {
+  const list = document.getElementById('clues-list');
+  const vis  = puzzle.clues.slice(0, revealedClues);
+  list.innerHTML = '';
+  vis.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.className = 'clue-item';
+    d.innerHTML = `<span class="clue-num">#${i+1}</span>${escHtml(c.text)}`;
+    list.appendChild(d);
+  });
+  // Scroll to newest clue
+  list.scrollTop = list.scrollHeight;
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const s = puzzle.suspects[i];
+    const st = boardState[i];
+    const div = document.createElement('div');
+    div.className = 'tile' +
+      (st === 0 ? ' innocent revealed' : st === 1 ? ' criminal revealed' : '');
+    if (st === -1) div.addEventListener('click', () => openModal(i));
+    const badge = st === 0 ? '✅' : st === 1 ? '🔴' : '';
+    div.innerHTML =
+      `<span class="tile-emoji">${s.emoji}</span>` +
+      `<div class="tile-name">${escHtml(s.name)}</div>` +
+      `<div class="tile-occ">${escHtml(s.occupation)}</div>` +
+      (badge ? `<span class="tile-badge">${badge}</span>` : '');
+    grid.appendChild(div);
+  }
+}
+
+function renderStats() {
+  const found = boardState.filter(v => v !== -1).length;
+  document.getElementById('stat-clues').textContent =
+    `${revealedClues} / ${puzzle.clues.length}`;
+  document.getElementById('stat-found').textContent =
+    `${found} / 20`;
+}
+
+// Ensure there is always at least one deducible tile; if not, auto-reveal clues.
+function ensureProgress() {
+  while (revealedClues < puzzle.clues.length) {
+    const anyDeducible = boardState.some((v, i) => v === -1 && isTileDeducible(i));
+    if (anyDeducible) break;
+    revealedClues++;
+  }
+}
+
+function renderAll() {
+  ensureProgress();
+  renderClues();
+  renderGrid();
+  renderStats();
+}
+
+// ================================================================
+// MODAL
+// ================================================================
+
+function openModal(tileIdx) {
+  selectedTile = tileIdx;
+  const s = puzzle.suspects[tileIdx];
+  document.getElementById('modal-suspect').innerHTML =
+    `<span class="modal-emoji">${s.emoji}</span>` +
+    `<div class="modal-name">${escHtml(s.name)}</div>` +
+    `<div class="modal-occ">${escHtml(s.occupation)}</div>`;
+  clearModalMsg();
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  selectedTile = null;
+}
+
+function clearModalMsg() {
+  const el = document.getElementById('modal-msg');
+  el.textContent = '';
+  el.className = '';
+}
+
+function showModalMsg(msg, type) {
+  const el = document.getElementById('modal-msg');
+  el.textContent = msg;
+  el.className = type;
+}
+
+function makeGuess(value) {
+  if (selectedTile === null) return;
+  const idx = selectedTile;
+
+  // Check deducibility before counting the attempt
+  if (!isTileDeducible(idx)) {
+    showModalMsg(
+      "This suspect's status cannot be determined from the current clues. Keep reading!",
+      'warning'
+    );
+    return;
+  }
+
+  guessCount[idx]++;
+
+  if (value !== puzzle.solution[idx]) {
+    showModalMsg("That doesn't seem right. Try again!", 'error');
+    return;
+  }
+
+  // Correct and deducible!
+  boardState[idx] = value;
+  firstTryOk[idx] = (guessCount[idx] === 1);
+
+  // Reveal the next clue
+  if (revealedClues < puzzle.clues.length) revealedClues++;
+
+  closeModal();
+  renderAll();
+
+  if (boardState.every(v => v !== -1)) {
+    setTimeout(showEndScreen, 600);
+  }
+}
+
+// ================================================================
+// END SCREEN
+// ================================================================
+
+function showEndScreen() {
+  const grid = document.getElementById('results-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const s   = puzzle.suspects[i];
+    const ok  = firstTryOk[i];
+    const div = document.createElement('div');
+    div.className = `result-tile ${ok ? 'first-try' : 'multi-try'}`;
+    div.innerHTML =
+      `<span class="result-emoji">${s.emoji}</span>` +
+      `<div class="result-name">${escHtml(s.name)}</div>`;
+    grid.appendChild(div);
+  }
+  document.getElementById('end-screen').classList.remove('hidden');
+}
+
+// ================================================================
+// XSS HELPER
+// ================================================================
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ================================================================
+// GAME LIFECYCLE
+// ================================================================
+
+function newGame() {
+  document.getElementById('end-screen').classList.add('hidden');
+  document.getElementById('app').style.display    = 'none';
+  document.getElementById('loading').style.display = 'flex';
+
+  // Defer to let the browser repaint the loading screen first
+  setTimeout(() => {
+    try {
+      puzzle = generatePuzzle();
+    } catch (e) {
+      document.getElementById('loading').innerHTML =
+        '<span style="color:#f87171">Failed to generate a puzzle. Please refresh the page.</span>';
+      return;
+    }
+
+    boardState    = new Array(N).fill(-1);
+    guessCount    = new Array(N).fill(0);
+    firstTryOk    = new Array(N).fill(null);
+    revealedClues = 1;           // Start with 1 clue; ensureProgress will auto-reveal more if needed
+    selectedTile  = null;
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display     = 'block';
+    renderAll();
+  }, 30);
+}
+
+// Kick off the first game
+newGame();
+</script>
+</body>
+</html>
