@@ -837,8 +837,9 @@ function makeGuess(value) {
   boardState[idx] = value;
   firstTryOk[idx] = (guessCount[idx] === 1);
 
-  // Reveal the next clue
-  if (revealedClues < puzzle.clues.length) revealedClues++;
+  // Do NOT reveal the next clue here.
+  // ensureProgress() (called via renderAll) will advance to the next clue
+  // only once ALL tiles implied by the current clue set have been uncovered.
 
   closeModal();
   renderAll();
