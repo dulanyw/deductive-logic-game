@@ -689,6 +689,66 @@ function generatePuzzle() {
 }
 
 // ================================================================
+// LOGIC TRACE
+// ================================================================
+
+// After puzzle generation, log each clue and which tiles it implicates
+// as criminal or innocent, showing the expected chain of deductive logic.
+function traceLogicChain({ solution, suspects, clues }) {
+  console.log('=== PUZZLE LOGIC TRACE ===');
+  console.log(
+    'Solution (criminals): ' +
+    solution.map((v, i) => (v === 1 ? suspects[i].name : null))
+            .filter(Boolean).join(', ')
+  );
+
+  const state = new Array(N).fill(-1); // all tiles start unknown
+  const activeClues = [];
+
+  for (let ci = 0; ci < clues.length; ci++) {
+    const clue = clues[ci];
+    activeClues.push(clue);
+
+    const newlyImplied = [];
+
+    // Iteratively resolve newly determinable tiles with the current clue set.
+    // A single clue addition may cascade: determining one tile can unlock another.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < N; i++) {
+        if (state[i] !== -1) continue; // already determined
+
+        const s0 = [...state]; s0[i] = 0;
+        const has0 = solve(activeClues, 1, s0).length > 0;
+
+        const s1 = [...state]; s1[i] = 1;
+        const has1 = solve(activeClues, 1, s1).length > 0;
+
+        if (has0 && !has1) {
+          state[i] = 0;
+          newlyImplied.push(`  ${suspects[i].name} (tile ${i + 1}) → innocent`);
+          changed = true;
+        } else if (!has0 && has1) {
+          state[i] = 1;
+          newlyImplied.push(`  ${suspects[i].name} (tile ${i + 1}) → criminal`);
+          changed = true;
+        }
+      }
+    }
+
+    if (newlyImplied.length > 0) {
+      console.log(`Clue #${ci + 1}: "${clue.text}"`);
+      newlyImplied.forEach(msg => console.log(msg));
+    } else {
+      console.log(`Clue #${ci + 1}: "${clue.text}" → (no immediate deductions)`);
+    }
+  }
+
+  console.log('=== END LOGIC TRACE ===');
+}
+
+// ================================================================
 // GAME STATE
 // ================================================================
 let puzzle        = null;
@@ -891,6 +951,7 @@ function newGame() {
   setTimeout(() => {
     try {
       puzzle = generatePuzzle();
+      traceLogicChain(puzzle);
     } catch (e) {
       document.getElementById('loading').innerHTML =
         '<span style="color:#f87171">Failed to generate a puzzle. Please refresh the page.</span>';
