@@ -375,6 +375,22 @@ function getNeighbors(idx) {
 // SOLVER
 // ================================================================
 
+// Attempt to propagate a single parity constraint.
+// Mutates `state`. Returns true (changed), false (unchanged), or null (contradiction).
+function propagateParity(c, state) {
+  const { S, target } = c;
+  const crim = S.filter(i => state[i] === 1).length;
+  const unk  = S.filter(i => state[i] === -1);
+  if (unk.length === 0) {
+    return crim % 2 === target ? false : null;
+  }
+  if (unk.length === 1) {
+    state[unk[0]] = (target - crim % 2 + 2) % 2;
+    return true;
+  }
+  return false;
+}
+
 // Attempt to propagate a single subset constraint.
 // Mutates `state`. Returns true (changed), false (unchanged), or null (contradiction).
 function propagateSubset(c, state) {
@@ -419,6 +435,10 @@ function propagateAll(constraints, state) {
         const r = propagateSubset(c, state);
         if (r === null) return null;
         if (r) changed = true;
+      } else if (c.type === 'parity') {
+        const r = propagateParity(c, state);
+        if (r === null) return null;
+        if (r) changed = true;
       } else if (c.type === 'cmp') {
         if (!cmpPossible(c, state)) return null;
       }
@@ -432,6 +452,10 @@ function validateOne(c, state) {
   if (c.type === 'subset') {
     const s = c.S.reduce((t, i) => t + state[i], 0);
     return s >= c.kmin && s <= c.kmax;
+  }
+  if (c.type === 'parity') {
+    const s = c.S.reduce((t, i) => t + state[i], 0);
+    return s % 2 === c.target;
   }
   if (c.type === 'cmp') {
     const sA = c.A.reduce((t, i) => t + state[i], 0);
@@ -546,14 +570,29 @@ function buildCluePool(solution, suspects) {
       text:`Column ${c+1} contains exactly ${k} criminal${k!==1?'s':''}.` });
   }
 
-  // -- Neighborhood clues (up to 8 most informative) --
-  const nbCandidates = range(N).map(i => {
+  // -- Neighborhood clues (up to 12 most informative, including innocent counts and parity) --
+  const nbCandidates = [];
+  range(N).forEach(i => {
     const S = getNeighbors(i);
-    const k = S.reduce((t, j) => t + solution[j], 0);
-    return { type:'subset', S, kmin:k, kmax:k,
-      text:`${suspects[i].name}'s neighbors include exactly ${k} criminal${k!==1?'s':''}.` };
+    const k  = S.reduce((t, j) => t + solution[j], 0);
+    const ki = S.length - k;
+    const name = suspects[i].name;
+    // Criminal exact count (existing)
+    nbCandidates.push({ type:'subset', S, kmin:k, kmax:k,
+      text:`${name}'s neighbors include exactly ${k} criminal${k!==1?'s':''}.` });
+    // Innocent exact count (new)
+    nbCandidates.push({ type:'subset', S, kmin:k, kmax:k,
+      text:`${name}'s neighbors include exactly ${ki} innocent${ki!==1?'s':''}.` });
+    // Criminal parity (new)
+    const cparity = k % 2;
+    nbCandidates.push({ type:'parity', S, target:cparity,
+      text:`${name} has an ${cparity===0?'even':'odd'} number of criminal neighbors.` });
+    // Innocent parity (new)
+    const iparity = ki % 2;
+    nbCandidates.push({ type:'parity', S, target:(S.length + iparity) % 2,
+      text:`${name} has an ${iparity===0?'even':'odd'} number of innocent neighbors.` });
   });
-  pool.push(...shuffle(nbCandidates).slice(0, 8));
+  pool.push(...shuffle(nbCandidates).slice(0, 12));
 
   // -- Occupation totals --
   const occGroups = {};
@@ -626,6 +665,64 @@ function buildCluePool(solution, suspects) {
         text:`Among ${names[0]}, ${names[1]}, ${names[2]}, and ${names[3]}, exactly ${k} ${k===1?'is':'are'} criminal.` });
     }
   }
+
+  // -- Directional clues: Y criminals/innocents above/below/left/right of a focus tile --
+  const DIRS = [
+    { label: 'above',          getTiles: (r,c) => range(r).map(row => row*COLS+c) },
+    { label: 'below',          getTiles: (r,c) => range(ROWS-r-1).map(d => (r+1+d)*COLS+c) },
+    { label: 'to the left of', getTiles: (r,c) => range(c).map(col => r*COLS+col) },
+    { label: 'to the right of',getTiles: (r,c) => range(COLS-c-1).map(d => r*COLS+c+1+d) }
+  ];
+  const dirCandidates = [];
+  for (let i = 0; i < N; i++) {
+    const r = tileRow(i), c = tileCol(i);
+    const name = suspects[i].name;
+    for (const { label, getTiles } of DIRS) {
+      const S = getTiles(r, c);
+      if (S.length === 0) continue;
+      const k  = S.reduce((t, j) => t + solution[j], 0);
+      const ki = S.length - k;
+      // Criminal exact count
+      dirCandidates.push({ type:'subset', S, kmin:k, kmax:k,
+        text:`There ${k===1?'is':'are'} exactly ${k} criminal${k!==1?'s':''} ${label} ${name}.` });
+      // Innocent exact count
+      dirCandidates.push({ type:'subset', S, kmin:k, kmax:k,
+        text:`There ${ki===1?'is':'are'} exactly ${ki} innocent${ki!==1?'s':''} ${label} ${name}.` });
+      // Criminal parity
+      const cparity = k % 2;
+      dirCandidates.push({ type:'parity', S, target:cparity,
+        text:`There are an ${cparity===0?'even':'odd'} number of criminals ${label} ${name}.` });
+      // Innocent parity
+      const iparity = ki % 2;
+      dirCandidates.push({ type:'parity', S, target:(S.length + iparity) % 2,
+        text:`There are an ${iparity===0?'even':'odd'} number of innocents ${label} ${name}.` });
+    }
+  }
+  pool.push(...shuffle(dirCandidates).slice(0, 12));
+
+  // -- Edge tile clues: criminals/innocents on the border (row 1, row 5, col 1, col 4) --
+  const edgeSet = new Set();
+  for (let col = 0; col < COLS; col++) {
+    edgeSet.add(0*COLS+col);
+    edgeSet.add((ROWS-1)*COLS+col);
+  }
+  for (let row = 0; row < ROWS; row++) {
+    edgeSet.add(row*COLS+0);
+    edgeSet.add(row*COLS+(COLS-1));
+  }
+  const edgeS  = [...edgeSet].sort((a,b)=>a-b);
+  const edgeK  = edgeS.reduce((t,i)=>t+solution[i], 0);
+  const edgeKi = edgeS.length - edgeK;
+  pool.push({ type:'subset', S:edgeS, kmin:edgeK, kmax:edgeK,
+    text:`The edge tiles contain exactly ${edgeK} criminal${edgeK!==1?'s':''}.` });
+  pool.push({ type:'subset', S:edgeS, kmin:edgeK, kmax:edgeK,
+    text:`The edge tiles contain exactly ${edgeKi} innocent${edgeKi!==1?'s':''}.` });
+  const edgeCparity = edgeK % 2;
+  pool.push({ type:'parity', S:edgeS, target:edgeCparity,
+    text:`The edge tiles contain an ${edgeCparity===0?'even':'odd'} number of criminals.` });
+  const edgeIparity = edgeKi % 2;
+  pool.push({ type:'parity', S:edgeS, target:(edgeS.length + edgeIparity) % 2,
+    text:`The edge tiles contain an ${edgeIparity===0?'even':'odd'} number of innocents.` });
 
   return pool;
 }
