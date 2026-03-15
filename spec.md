@@ -432,5 +432,5 @@ This architecture allows a lightweight generator capable of producing
 - When clicked, a modal pops up and asks if that character is innocent or criminal. The player selects one or the other.
 - If the player is correct based on the clues shown, the tile's background changes color and the next clue is revealed.
 - If the player is not correct or cannot determine the answer based on the clues shown, the board state does not change.
-- The entire board should be revealed after no more than 10 clues.
+- The entire board should be revealed after no more than 15 clues.
 - Once the entire board is revealed, a screen should pop up, showing a grid indicating which tiles the player selected correctly on the first try, vs those that took multiple guesses. It should also contain a button asking the player if they would like to play another round.
