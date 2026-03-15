@@ -737,6 +737,60 @@ function pruneClues(clues) {
   return result;
 }
 
+// Attempt to reorder `clues` so that each clue reveals at least one new tile
+// when added in sequence.  Returns the ordered array on success, or null if no
+// such ordering exists (meaning at least one clue can never add new information
+// at any position in the sequence).
+function orderCluesProgressively(clues) {
+  const remaining = [...clues];
+  const ordered   = [];
+  const state     = new Array(N).fill(-1);
+
+  while (remaining.length > 0) {
+    let chosen    = -1;
+    let nextState = null;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate  = [...ordered, remaining[i]];
+      const localState = [...state];
+      let revealedAny  = false;
+
+      // Iteratively resolve newly determinable tiles with this candidate set.
+      // A single clue addition may cascade: resolving one tile can unlock another.
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let j = 0; j < N; j++) {
+          if (localState[j] !== -1) continue;
+          const s0 = [...localState]; s0[j] = 0;
+          const has0 = solve(candidate, 1, s0).length > 0;
+          const s1 = [...localState]; s1[j] = 1;
+          const has1 = solve(candidate, 1, s1).length > 0;
+          if (has0 !== has1) {
+            localState[j] = has1 ? 1 : 0;
+            revealedAny   = true;
+            changed       = true;
+          }
+        }
+      }
+
+      if (revealedAny) {
+        chosen    = i;
+        nextState = localState;
+        break;
+      }
+    }
+
+    if (chosen === -1) return null; // no remaining clue reveals any new tile
+    const picked = remaining[chosen];
+    remaining.splice(chosen, 1);
+    ordered.push(picked);
+    for (let j = 0; j < N; j++) state[j] = nextState[j];
+  }
+
+  return ordered;
+}
+
 // Main generation entry point. Returns { solution, suspects, clues }.
 function generatePuzzle() {
   const MAX_OUTER = 150;
@@ -762,6 +816,11 @@ function generatePuzzle() {
 
     if (active.length < 1 || active.length > MAX_CLUES) continue; // enforce spec limit
 
+    // Ensure each clue reveals at least one new tile when added in sequence.
+    const ordered = orderCluesProgressively(active);
+    if (!ordered) continue;
+    active = ordered;
+
     return { solution, suspects, clues: active };
   }
 
@@ -779,7 +838,10 @@ function generatePuzzle() {
     }
     if (solve(active, 2).length !== 1) continue;
     active = pruneClues(active);
-    if (active.length >= 1 && active.length <= MAX_CLUES) return { solution, suspects, clues: active };
+    if (active.length >= 1 && active.length <= MAX_CLUES) {
+      const ordered = orderCluesProgressively(active);
+      if (ordered) return { solution, suspects, clues: ordered };
+    }
   }
 
   throw new Error('Puzzle generation failed after all attempts.');
